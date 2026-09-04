@@ -164,11 +164,12 @@ class MainActivity : Activity() {
     inner class GameView : View(this) {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val bitmap = Bitmap.createBitmap(256, 240, Bitmap.Config.ARGB_8888)
-        private var lastMask = -1
+        private var lastMask = 0
 
         init {
             isClickable = true
             isFocusable = true
+            isFocusableInTouchMode = true
         }
 
         override fun onDraw(c: Canvas) {
@@ -216,19 +217,25 @@ class MainActivity : Activity() {
             if (near(cx, cy+d*.7f, d*.62f)) mask = mask or 4
             if (near(cx-d*.7f, cy, d*.62f)) mask = mask or 2
             if (near(cx+d*.7f, cy, d*.62f)) mask = mask or 1
-            if (near(bx, by, d*.62f)) mask = mask or 16
-            if (near(bx-d*.9f, by+d*.55f, d*.62f)) mask = mask or 32
-            if (x>w*.41f && x<w*.51f && y>h*.82f) mask = mask or 64
-            if (x>w*.50f && x<w*.60f && y>h*.82f) mask = mask or 128
+
+            // Give A/B large rectangular hit areas as well as circular hit areas.
+            // This avoids missed presses on phones with different aspect ratios or touch scaling.
+            if (near(bx, by, d*.80f) || (x > w*.76f && x < w*.96f && y > h*.63f && y < h*.90f)) mask = mask or 16
+            if (near(bx-d*.9f, by+d*.55f, d*.75f) || (x > w*.66f && x < w*.82f && y > h*.69f && y < h*.96f)) mask = mask or 32
+            if (x>w*.40f && x<w*.52f && y>h*.80f) mask = mask or 64
+            if (x>w*.49f && x<w*.62f && y>h*.80f) mask = mask or 128
             return mask
         }
 
         override fun onTouchEvent(e: MotionEvent): Boolean {
             val action = e.actionMasked
-            if (action == MotionEvent.ACTION_DOWN) parent.requestDisallowInterceptTouchEvent(true)
+            if (action == MotionEvent.ACTION_DOWN) {
+                requestFocus()
+                parent.requestDisallowInterceptTouchEvent(true)
+            }
             var mask = 0
+            val lifted = if (action == MotionEvent.ACTION_POINTER_UP) e.actionIndex else -1
             if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-                val lifted = if (action == MotionEvent.ACTION_POINTER_UP) e.actionIndex else -1
                 for (i in 0 until e.pointerCount) if (i != lifted) mask = mask or hitMask(e.getX(i), e.getY(i))
             }
             if (mask != lastMask) {
@@ -236,6 +243,8 @@ class MainActivity : Activity() {
                 nativeButtons(mask)
             }
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                lastMask = 0
+                nativeButtons(0)
                 parent.requestDisallowInterceptTouchEvent(false)
                 performClick()
             }
