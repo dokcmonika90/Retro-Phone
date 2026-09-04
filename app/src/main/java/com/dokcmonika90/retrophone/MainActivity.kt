@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.*
 import android.media.*
 import android.os.Bundle
+import android.util.SparseIntArray
 import android.view.*
 import android.widget.*
 import java.util.zip.ZipInputStream
@@ -27,6 +28,7 @@ class MainActivity : Activity() {
     private var running = false
     private var audioRunning = false
     private val frameMs = 16L
+    private val activeTouches = SparseIntArray()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
@@ -161,10 +163,88 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    private fun controlMaskAt(x: Float, y: Float): Int {
+        val w = screen.width.toFloat().coerceAtLeast(1f)
+        val h = screen.height.toFloat().coerceAtLeast(1f)
+        val d = minOf(w, h) * .16f
+        val cx = w * .16f; val cy = h * .77f
+        val bx = w * .84f; val by = h * .77f
+        fun near(px: Float, py: Float, radius: Float): Boolean {
+            val dx = x - px; val dy = y - py
+            return dx * dx + dy * dy < radius * radius
+        }
+        var mask = 0
+        if (near(cx, cy-d*.70f, d*.62f)) mask = mask or 8
+        if (near(cx, cy+d*.70f, d*.62f)) mask = mask or 4
+        if (near(cx-d*.70f, cy, d*.62f)) mask = mask or 2
+        if (near(cx+d*.70f, cy, d*.62f)) mask = mask or 1
+
+        // A has a large dedicated region on the lower-right side.
+        if (near(bx, by, d*.95f) ||
+            (x > w*.70f && x < w*.99f && y > h*.55f && y < h*.99f)) mask = mask or 16
+
+        // B has a separate region left of A.
+        if (near(bx-d*.90f, by+d*.55f, d*.75f) ||
+            (x > w*.53f && x < w*.70f && y > h*.65f && y < h*.99f)) mask = mask or 32
+
+        if (x > w*.40f && x < w*.52f && y > h*.80f) mask = mask or 64
+        if (x > w*.49f && x < w*.62f && y > h*.80f) mask = mask or 128
+        return mask
+    }
+
+    private fun rebuildTouchMask(event: MotionEvent): Int {
+        var mask = 0
+        for (i in 0 until event.pointerCount) {
+            mask = mask or controlMaskAt(event.getX(i), event.getY(i))
+        }
+        return mask
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        // Let the top toolbar's real Android buttons receive their normal touch events.
+        if (event.y < 62f && activeTouches.size() == 0) return super.dispatchTouchEvent(event)
+
+        when (action) {
+            MotionEvent.ACTION_DOWN -> {
+                activeTouches.clear()
+                activeTouches.put(event.getPointerId(0), controlMaskAt(event.getX(0), event.getY(0)))
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                val i = event.actionIndex
+                activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
+            }
+            MotionEvent.ACTION_MOVE -> {
+                for (i in 0 until event.pointerCount) {
+                    activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val lifted = event.actionIndex
+                activeTouches.delete(event.getPointerId(lifted))
+                for (i in 0 until event.pointerCount) {
+                    if (i != lifted) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
+                }
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                activeTouches.clear()
+            }
+        }
+
+        var mask = 0
+        for (i in 0 until activeTouches.size()) mask = mask or activeTouches.valueAt(i)
+        nativeButtons(mask)
+        screen.invalidate()
+
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            return true
+        }
+        return true
+    }
+
     inner class GameView : View(this) {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val bitmap = Bitmap.createBitmap(256, 240, Bitmap.Config.ARGB_8888)
-        private var lastMask = 0
 
         init {
             isClickable = true
@@ -179,7 +259,7 @@ class MainActivity : Activity() {
             val left = (width - 256f * scale) / 2f
             val top = (height - 240f * scale) / 2f
             c.drawColor(Color.BLACK)
-            c.drawBitmap(bitmap, null, RectF(left, top, left + 256f * scale, top + 240f * scale), paint)
+            c.drawBitmap(bitmap, null, RectF(left, top, left + 256f*scale, top + 240f*scale), paint)
             drawControls(c)
         }
 
@@ -195,72 +275,22 @@ class MainActivity : Activity() {
             val bx = width * .84f; val by = height * .77f
             c.drawCircle(bx, by, r, paint)
             c.drawCircle(bx-r*1.1f, by+r*.65f, r*.72f, paint)
-            paint.textAlign = Paint.Align.CENTER; paint.textSize = r*.55f; paint.color = Color.DKGRAY; paint.alpha=230
+            paint.textAlign = Paint.Align.CENTER; paint.textSize = r*.55f; paint.color = Color.DKGRAY; paint.alpha = 230
             c.drawText("A", bx, by+r*.2f, paint)
             c.drawText("B", bx-r*1.1f, by+r*.65f+r*.2f, paint)
-            paint.alpha=150
+            paint.alpha = 150
             c.drawRoundRect(RectF(width*.43f,height*.86f,width*.50f,height*.91f),12f,12f,paint)
             c.drawRoundRect(RectF(width*.51f,height*.86f,width*.58f,height*.91f),12f,12f,paint)
         }
 
-        private fun hitMask(x: Float, y: Float): Int {
-            var mask = 0
-            val w = width.toFloat(); val h = height.toFloat()
-            val d = minOf(w, h) * .16f
-            val cx = w*.16f; val cy = h*.77f
-            val bx = w*.84f; val by = h*.77f
-            fun near(px: Float, py: Float, radius: Float): Boolean {
-                val dx = x-px; val dy = y-py
-                return dx*dx + dy*dy < radius*radius
-            }
-            if (near(cx, cy-d*.7f, d*.62f)) mask = mask or 8
-            if (near(cx, cy+d*.7f, d*.62f)) mask = mask or 4
-            if (near(cx-d*.7f, cy, d*.62f)) mask = mask or 2
-            if (near(cx+d*.7f, cy, d*.62f)) mask = mask or 1
-
-            // Give A/B large rectangular hit areas as well as circular hit areas.
-            // This avoids missed presses on phones with different aspect ratios or touch scaling.
-            if (near(bx, by, d*.80f) || (x > w*.76f && x < w*.96f && y > h*.63f && y < h*.90f)) mask = mask or 16
-            if (near(bx-d*.9f, by+d*.55f, d*.75f) || (x > w*.66f && x < w*.82f && y > h*.69f && y < h*.96f)) mask = mask or 32
-            if (x>w*.40f && x<w*.52f && y>h*.80f) mask = mask or 64
-            if (x>w*.49f && x<w*.62f && y>h*.80f) mask = mask or 128
-            return mask
-        }
-
-        override fun onTouchEvent(e: MotionEvent): Boolean {
-            val action = e.actionMasked
-            if (action == MotionEvent.ACTION_DOWN) {
-                requestFocus()
-                parent.requestDisallowInterceptTouchEvent(true)
-            }
-            var mask = 0
-            val lifted = if (action == MotionEvent.ACTION_POINTER_UP) e.actionIndex else -1
-            if (action != MotionEvent.ACTION_UP && action != MotionEvent.ACTION_CANCEL) {
-                for (i in 0 until e.pointerCount) if (i != lifted) mask = mask or hitMask(e.getX(i), e.getY(i))
-            }
-            if (mask != lastMask) {
-                lastMask = mask
-                nativeButtons(mask)
-            }
-            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                lastMask = 0
-                nativeButtons(0)
-                parent.requestDisallowInterceptTouchEvent(false)
-                performClick()
-            }
-            invalidate()
-            return true
-        }
-
-        override fun performClick(): Boolean {
-            super.performClick()
-            return true
-        }
+        override fun onTouchEvent(e: MotionEvent): Boolean = true
     }
 
     override fun onDestroy() {
         running = false
         audioRunning = false
+        activeTouches.clear()
+        nativeButtons(0)
         try { audio?.pause() } catch (_: Exception) { }
         try { audio?.flush() } catch (_: Exception) { }
         try { audio?.release() } catch (_: Exception) { }
