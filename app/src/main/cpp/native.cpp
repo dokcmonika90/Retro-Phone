@@ -14,7 +14,6 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 namespace PPU { extern u32 pixels[256 * 240]; }
-
 static std::mutex emuMutex;
 
 static bool writeRomFile(JNIEnv* env, jbyteArray data) {
@@ -70,14 +69,18 @@ Java_com_dokcmonika90_retrophone_MainActivity_nativeRunFrame(JNIEnv*, jobject) {
     if (Cartridge::loaded()) CPU::run_frame();
 }
 
-// Android mask already uses the NES controller bit layout:
-// bit 0=A, 1=B, 2=Select, 3=Start, 4=Up, 5=Down, 6=Left, 7=Right.
-// Keep this conversion explicit so the Java UI cannot accidentally alter
-// the core's serial-controller bit order.
 extern "C" JNIEXPORT void JNICALL
 Java_com_dokcmonika90_retrophone_MainActivity_nativeButtons(JNIEnv*, jobject, jint mask) {
-    const u8 state = (u8)(mask & 0xFF);
-    GUI::set_joypad_state(0, state);
+    u8 p = 0;
+    if (mask & 16)  p |= 0x01;
+    if (mask & 32)  p |= 0x02;
+    if (mask & 64)  p |= 0x04;
+    if (mask & 128) p |= 0x08;
+    if (mask & 8)   p |= 0x10;
+    if (mask & 4)   p |= 0x20;
+    if (mask & 2)   p |= 0x40;
+    if (mask & 1)   p |= 0x80;
+    GUI::set_joypad_state(0, p);
 }
 
 extern "C" JNIEXPORT jshortArray JNICALL
