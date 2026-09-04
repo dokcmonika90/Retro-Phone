@@ -4,12 +4,9 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.*
 import android.media.*
-import android.net.Uri
 import android.os.Bundle
 import android.view.*
 import android.widget.*
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import kotlin.math.max
 
 class MainActivity : Activity() {
@@ -24,6 +21,7 @@ class MainActivity : Activity() {
     companion object { init { System.loadLibrary("retro_recompiler") } }
 
     private lateinit var screen: GameView
+    private lateinit var status: TextView
     private var audio: AudioTrack? = null
     private var running = false
     private val frameMs = 16L
@@ -38,8 +36,8 @@ class MainActivity : Activity() {
         root.addView(screen, FrameLayout.LayoutParams(-1, -1))
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(18, 10, 18, 10); setBackgroundColor(0xAA101010.toInt()) }
         val load = Button(this).apply { text = "LOAD NES"; setOnClickListener { pickRom() } }
-        val reset = Button(this).apply { text = "RESET"; setOnClickListener { nativeReset() } }
-        val status = TextView(this).apply { text = "  ${nativeVersion()}"; setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER_VERTICAL }
+        val reset = Button(this).apply { text = "RESET"; setOnClickListener { nativeReset(); status.text = "  Reset" } }
+        status = TextView(this).apply { text = "  ${nativeVersion()}"; setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER_VERTICAL }
         bar.addView(load); bar.addView(reset); bar.addView(status, LinearLayout.LayoutParams(0, -1, 1f))
         root.addView(bar, FrameLayout.LayoutParams(-1, 62, Gravity.TOP))
         setContentView(root)
@@ -48,18 +46,50 @@ class MainActivity : Activity() {
     }
 
     private fun pickRom() {
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply { type = "application/octet-stream"; addCategory(Intent.CATEGORY_OPENABLE) }, 42)
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            type = "*/*"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, 42)
     }
 
     override fun onActivityResult(req: Int, result: Int, data: Intent?) {
         super.onActivityResult(req, result, data)
-        if (req == 42 && result == RESULT_OK) data?.data?.let { uri -> contentResolver.openInputStream(uri)?.use { input ->
-            val bytes = input.readBytes(); nativeLoad(bytes); nativeReset()
-        } }
+        if (req != 42 || result != RESULT_OK || data?.data == null) return
+        val uri = data.data!!
+        try {
+            try { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytes == null || bytes.size < 16) {
+                status.text = "  ROM could not be read"
+                Toast.makeText(this, "Could not read that file", Toast.LENGTH_LONG).show()
+                return
+            }
+            if (bytes[0].toInt() != 'N'.code || bytes[1].toInt() != 'E'.code || bytes[2].toInt() != 'S'.code || bytes[3].toInt() != 0x1A) {
+                status.text = "  Not an iNES .nes ROM"
+                Toast.makeText(this, "Select a valid .nes ROM file", Toast.LENGTH_LONG).show()
+                return
+            }
+            val ok = nativeLoad(bytes)
+            if (ok) {
+                nativeReset()
+                status.text = "  ROM loaded (${bytes.size / 1024} KB)"
+                Toast.makeText(this, "NES ROM loaded", Toast.LENGTH_SHORT).show()
+            } else {
+                status.text = "  ROM not supported"
+                Toast.makeText(this, "ROM is invalid or uses an unsupported mapper", Toast.LENGTH_LONG).show()
+            }
+            screen.invalidate()
+        } catch (e: Exception) {
+            status.text = "  ROM load failed"
+            Toast.makeText(this, "ROM load failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun startAudio() {
-        val sr = 44100; val min = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        val sr = 44100
+        val min = AudioTrack.getMinBufferSize(sr, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         audio = AudioTrack.Builder().setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()).setAudioFormat(AudioFormat.Builder().setSampleRate(sr).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build()).setBufferSizeInBytes(max(min, sr / 4 * 2)).setTransferMode(AudioTrack.MODE_STREAM).build()
         audio?.play()
         Thread { while (!isFinishing) { val pcm = nativeAudio(); if (pcm.isNotEmpty()) audio?.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING) else Thread.sleep(5) } }.start()
