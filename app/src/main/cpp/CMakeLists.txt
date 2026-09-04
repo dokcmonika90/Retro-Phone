@@ -23,6 +23,7 @@ add_library(retro_recompiler SHARED
     ${LAINES_DIR}/lib/Multi_Buffer.cpp
     ${LAINES_DIR}/lib/Nes_Apu.cpp
     ${LAINES_DIR}/lib/Nes_Oscs.cpp
+    ${LAINES_DIR}/lib/Nes_Vrc6.cpp
     ${LAINES_DIR}/lib/Nonlinear_Buffer.cpp
 )
 
