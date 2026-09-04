@@ -3,6 +3,12 @@ project(retro_phone)
 
 set(LAINES_DIR ${CMAKE_CURRENT_LIST_DIR}/../../../../third_party/LaiNES)
 
+# LaiNES contains the mapper implementations that its core supports.
+# Build every mapper source instead of compiling only MMC3/Mapper 4.
+file(GLOB LainesMappers CONFIGURE_DEPENDS
+    ${LAINES_DIR}/src/mappers/*.cpp
+)
+
 add_library(retro_recompiler SHARED
     native.cpp
     gui_stub.cpp
@@ -12,7 +18,7 @@ add_library(retro_recompiler SHARED
     ${LAINES_DIR}/src/ppu.cpp
     ${LAINES_DIR}/src/mapper.cpp
     ${LAINES_DIR}/src/joypad.cpp
-    ${LAINES_DIR}/src/mappers/mapper4.cpp
+    ${LainesMappers}
     ${LAINES_DIR}/lib/Blip_Buffer.cpp
     ${LAINES_DIR}/lib/Multi_Buffer.cpp
     ${LAINES_DIR}/lib/Nes_Apu.cpp
