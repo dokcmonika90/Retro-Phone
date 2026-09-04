@@ -10,9 +10,12 @@ s = s.replace('bool jit(uint16_t pc){if(ji[pc]>=0)return true;std::vector<uint32
 s = s.replace('q++;}else if(o==0xe8){', 'q++;translated++;}else if(o==0xe8){')
 s = s.replace('q++;}else break;}v.push_back(0xd65f03c0);', 'q++;translated++;}else break;}if(!translated)return false;v.push_back(0xd65f03c0);')
 s = s.replace('std::fill(std::begin(pal),std::end(pal),0);std::fill(fb.begin(),fb.end(),0xff000000);', 'std::fill(std::begin(pal),std::end(pal),0);pal[0]=0x0f;pal[1]=0x01;pal[2]=0x21;pal[3]=0x31;vaddr=0;ppuLatch=false;std::fill(fb.begin(),fb.end(),0xff000000);')
-# Run a complete NTSC-sized CPU frame rather than only ~40% of a frame. The
-# previous short run made VBlank/NMI and game initialization visibly oscillate.
+# For correctness, run the interpreter while the NES timing/core is being stabilized.
+s = s.replace('uint16_t p=c.pc;if(jit(p)&&ji[p]>=0)jb[ji[p]].fn(&c);else step();', 'step();')
+# Use a complete NTSC-sized CPU frame rather than the old short approximation.
 s = s.replace('void frameRun(){if(!loaded){for(int y=0;y<H;y++)for(int x=0;x<W;x++){uint8_t v=((x>>4)^(y>>4))&15;fb[y*W+x]=0xff000000|(v*17<<16)|(v*9<<8)|(v*5);}return;}run(12000);render();}', 'void frameRun(){if(!loaded){for(int y=0;y<H;y++)for(int x=0;x<W;x++){uint8_t v=((x>>4)^(y>>4))&15;fb[y*W+x]=0xff000000|(v*17<<16)|(v*9<<8)|(v*5);}return;}run(29780);render();}')
+# Add the missing RTI and BIT operations used by real NES interrupt/game code.
+s = s.replace('case 0x00:c.pc++;push(c.pc>>8);', 'case 0x40:c.p=(pop()&0xef)|0x20;c.pc=uint16_t(pop())|(uint16_t(pop())<<8);break;case 0x24:{uint8_t v=rd(zp());if(v&0x40)c.p|=64;else c.p&=~64;if((c.a&v)==0)c.p|=2;else c.p&=~2;if(v&0x80)c.p|=128;else c.p&=~128;}break;case 0x2c:{uint8_t v=rd(abs());if(v&0x40)c.p|=64;else c.p&=~64;if((c.a&v)==0)c.p|=2;else c.p&=~2;if(v&0x80)c.p|=128;else c.p&=~128;}break;case 0x00:c.pc++;push(c.pc>>8);')
 native.write_text(s)
 
 activity = Path('app/src/main/java/com/dokcmonika90/retrophone/MainActivity.kt')
