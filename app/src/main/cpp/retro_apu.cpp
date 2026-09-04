@@ -41,20 +41,7 @@ template <bool write> u8 access(int elapsed, u16 addr, u8 v, bool is_put_cycle) 
 template u8 access<0>(int, u16, u8, bool);
 template u8 access<1>(int, u16, u8, bool);
 
-void run_frame(int elapsed) {
-    init();
-    // Finish the APU frame first, then finalize Blip_Buffer's clock window
-    // and transfer all generated PCM samples to the Android audio queue.
-    apu.end_frame(elapsed);
-    buf.end_frame(elapsed);
-    while (buf.samples_avail() > 0) {
-        int count = buf.samples_avail() > 4096 ? 4096 : buf.samples_avail();
-        count = buf.read_samples(outBuf, count);
-        if (count <= 0) break;
-        GUI::new_samples(outBuf, (size_t)count);
-    }
-    last_irq_check_time = -1;
-}
+void run_frame(int elapsed) { init(); apu.end_frame(elapsed); last_irq_check_time = -1; }
 
 void end_buffer_frame(int elapsed) {
     init();
