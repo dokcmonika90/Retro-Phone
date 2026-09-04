@@ -1,0 +1,4 @@
+# Retro Phone uses the BSD-2-Clause licensed LaiNES NES core as a git submodule.
+[submodule "third_party/LaiNES"]
+	path = third_party/LaiNES
+	url = https://github.com/AndreaOrru/LaiNES.git
