@@ -33,7 +33,7 @@ static bool writeRomFile(JNIEnv* env, jbyteArray data) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_dokcmonika90_retrophone_MainActivity_nativeVersion(JNIEnv* env, jobject) {
-    return env->NewStringUTF("Retro Phone — LaiNES cycle-accurate core");
+    return env->NewStringUTF("Retro Phone — LaiNES cycle-accurate core + Android I/O");
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
@@ -49,6 +49,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_dokcmonika90_retrophone_MainActivity_nativeReset(JNIEnv*, jobject) {
     std::lock_guard<std::mutex> lock(emuMutex);
     if (Cartridge::loaded()) Cartridge::reset();
+    GUI::clear_samples();
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
@@ -69,24 +70,20 @@ Java_com_dokcmonika90_retrophone_MainActivity_nativeRunFrame(JNIEnv*, jobject) {
     if (Cartridge::loaded()) CPU::run_frame();
 }
 
+// Android mask already uses the NES controller bit layout:
+// bit 0=A, 1=B, 2=Select, 3=Start, 4=Up, 5=Down, 6=Left, 7=Right.
+// Keep this conversion explicit so the Java UI cannot accidentally alter
+// the core's serial-controller bit order.
 extern "C" JNIEXPORT void JNICALL
 Java_com_dokcmonika90_retrophone_MainActivity_nativeButtons(JNIEnv*, jobject, jint mask) {
-    u8 p = 0;
-    if (mask & 16)  p |= 0x01;
-    if (mask & 32)  p |= 0x02;
-    if (mask & 64)  p |= 0x04;
-    if (mask & 128) p |= 0x08;
-    if (mask & 8)   p |= 0x10;
-    if (mask & 4)   p |= 0x20;
-    if (mask & 2)   p |= 0x40;
-    if (mask & 1)   p |= 0x80;
-    GUI::set_joypad_state(0, p);
+    const u8 state = (u8)(mask & 0xFF);
+    GUI::set_joypad_state(0, state);
 }
 
 extern "C" JNIEXPORT jshortArray JNICALL
 Java_com_dokcmonika90_retrophone_MainActivity_nativeAudio(JNIEnv* env, jobject) {
-    int16_t samples[2048];
-    const size_t count = GUI::take_samples(samples, 2048);
+    int16_t samples[4096];
+    const size_t count = GUI::take_samples(samples, 4096);
     if (count == 0) return env->NewShortArray(0);
     jshortArray out = env->NewShortArray((jsize)count);
     if (!out) return nullptr;
