@@ -91,16 +91,16 @@ class MainActivity : Activity() {
             }
             val bytes = unwrapped.first
             val mapper = ((bytes[6].toInt() and 0xF0) shr 4) or (bytes[7].toInt() and 0xF0)
-            if (mapper != 0) {
+            if (mapper != 0 && mapper != 4) {
                 status.text = "  Mapper $mapper not supported yet"
-                Toast.makeText(this, "This ROM uses mapper $mapper. Mapper 0 is supported in this build.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "This ROM uses mapper $mapper. Mapper 0 and Mapper 4 are supported in this build.", Toast.LENGTH_LONG).show()
                 return
             }
             val ok = nativeLoad(bytes)
             if (ok) {
                 nativeReset()
-                status.text = "  ROM loaded: ${unwrapped.second} (${bytes.size / 1024} KB)"
-                Toast.makeText(this, "NES ROM loaded", Toast.LENGTH_SHORT).show()
+                status.text = "  ROM loaded: ${unwrapped.second} (Mapper $mapper, ${bytes.size / 1024} KB)"
+                Toast.makeText(this, "NES Mapper $mapper ROM loaded", Toast.LENGTH_SHORT).show()
             } else {
                 status.text = "  ROM rejected by emulator"
                 Toast.makeText(this, "NES ROM could not be loaded", Toast.LENGTH_LONG).show()
