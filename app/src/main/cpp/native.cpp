@@ -1,7 +1,6 @@
 #include <jni.h>
 #include <android/log.h>
 #include <cstdio>
-#include <cstring>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -13,6 +12,8 @@
 
 #define LOG_TAG "RetroPhone"
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+
+namespace PPU { extern u32 pixels[256 * 240]; }
 
 static std::mutex emuMutex;
 
@@ -71,14 +72,14 @@ Java_com_dokcmonika90_retrophone_MainActivity_nativeRunFrame(JNIEnv*, jobject) {
 extern "C" JNIEXPORT void JNICALL
 Java_com_dokcmonika90_retrophone_MainActivity_nativeButtons(JNIEnv*, jobject, jint mask) {
     u8 p = 0;
-    if (mask & 16)  p |= 0x01; // A
-    if (mask & 32)  p |= 0x02; // B
-    if (mask & 64)  p |= 0x04; // Select
-    if (mask & 128) p |= 0x08; // Start
-    if (mask & 8)   p |= 0x10; // Up
-    if (mask & 4)   p |= 0x20; // Down
-    if (mask & 2)   p |= 0x40; // Left
-    if (mask & 1)   p |= 0x80; // Right
+    if (mask & 16)  p |= 0x01;
+    if (mask & 32)  p |= 0x02;
+    if (mask & 64)  p |= 0x04;
+    if (mask & 128) p |= 0x08;
+    if (mask & 8)   p |= 0x10;
+    if (mask & 4)   p |= 0x20;
+    if (mask & 2)   p |= 0x40;
+    if (mask & 1)   p |= 0x80;
     GUI::set_joypad_state(0, p);
 }
 
