@@ -24,8 +24,12 @@ class MainActivity : Activity() {
     private lateinit var screen: GameView
     private lateinit var status: TextView
     private lateinit var toolbar: LinearLayout
-    private var audio: AudioTrack?=null; private var running=false; private var audioRunning=false; private var gameplayFullscreen=false
-    private val frameMs=16L; private val activeTouches=SparseIntArray()
+    private var audio: AudioTrack?=null
+    private var running=false
+    private var audioRunning=false
+    private var gameplayFullscreen=false
+    private val frameMs=16L
+    private val activeTouches=SparseIntArray()
     private val libraryPrefs by lazy{getSharedPreferences("rom_library",MODE_PRIVATE)}
     private val romDirectory by lazy{java.io.File(filesDir,"roms").apply{mkdirs()}}
     override fun onCreate(state:Bundle?){super.onCreate(state);window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,WindowManager.LayoutParams.FLAG_FULLSCREEN);requestedOrientation=android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE;enterImmersiveUi();screen=GameView();val root=FrameLayout(this).apply{setBackgroundColor(Color.BLACK)};root.addView(screen,FrameLayout.LayoutParams(-1,-1).apply{topMargin=dp(62)});toolbar=LinearLayout(this).apply{orientation=LinearLayout.HORIZONTAL;setPadding(dp(8),dp(4),dp(8),dp(4));setBackgroundColor(0xCC101010.toInt());elevation=dp(4).toFloat()};val load=Button(this).apply{text="LOAD NES";setOnClickListener{pickRom()}};val library=Button(this).apply{text="LIBRARY";setOnClickListener{showLibrary()}};val reset=Button(this).apply{text="RESET";setOnClickListener{nativeReset();status.text="  Reset";screen.invalidate()}};val fullscreen=Button(this).apply{text="FULLSCREEN";setOnClickListener{setGameplayFullscreen(!gameplayFullscreen)}};status=TextView(this).apply{text="  ${nativeVersion()}";setTextColor(Color.WHITE);textSize=13f;gravity=Gravity.CENTER_VERTICAL;maxLines=2};toolbar.addView(load);toolbar.addView(library);toolbar.addView(reset);toolbar.addView(fullscreen);toolbar.addView(status,LinearLayout.LayoutParams(0,-1,1f));root.addView(toolbar,FrameLayout.LayoutParams(-1,dp(62),Gravity.TOP));setContentView(root);startAudio();startLoop()}
