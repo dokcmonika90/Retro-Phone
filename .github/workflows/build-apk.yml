@@ -35,6 +35,9 @@ jobs:
       - name: Apply Retro Phone native/input fixes
         run: python3 tools/fix_build.py
 
+      - name: Apply NES stability patch
+        run: python3 tools/stability_patch.py
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
