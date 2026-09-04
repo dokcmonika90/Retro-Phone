@@ -157,52 +157,100 @@ class MainActivity : Activity() {
         }.start()
     }
 
+    // Touch controls use exclusive hit regions. This prevents the old large
+    // catch-all regions from pressing A and B together and makes every control
+    // reachable on phones with different aspect ratios.
     private fun controlMaskAt(x: Float, y: Float): Int {
         val w = screen.width.toFloat().coerceAtLeast(1f)
         val h = screen.height.toFloat().coerceAtLeast(1f)
-        val d = minOf(w, h) * .16f
-        val cx = w * .16f; val cy = h * .77f
-        val bx = w * .84f; val by = h * .77f
-        fun near(px: Float, py: Float, radius: Float): Boolean {
-            val dx = x - px; val dy = y - py
-            return dx * dx + dy * dy < radius * radius
+        val r = minOf(w, h) * .105f
+
+        val dCx = w * .16f
+        val dCy = h * .77f
+        val aX = w * .84f
+        val aY = h * .77f
+        val bX = w * .72f
+        val bY = h * .86f
+
+        fun insideCircle(px: Float, py: Float, radius: Float): Boolean {
+            val dx = x - px
+            val dy = y - py
+            return dx * dx + dy * dy <= radius * radius
         }
+
+        // D-pad uses four overlapping directional zones. A single finger can
+        // still produce diagonals, which real NES games commonly use.
+        val dRadius = r * .72f
         var mask = 0
-        if (near(cx, cy-d*.70f, d*.62f)) mask = mask or 8
-        if (near(cx, cy+d*.70f, d*.62f)) mask = mask or 4
-        if (near(cx-d*.70f, cy, d*.62f)) mask = mask or 2
-        if (near(cx+d*.70f, cy, d*.62f)) mask = mask or 1
-        if (near(bx, by, d*.95f) || (x > w*.70f && x < w*.99f && y > h*.55f && y < h*.99f)) mask = mask or 16
-        if (near(bx-d*.90f, by+d*.55f, d*.75f) || (x > w*.53f && x < w*.70f && y > h*.65f && y < h*.99f)) mask = mask or 32
-        if (x > w*.40f && x < w*.52f && y > h*.80f) mask = mask or 64
-        if (x > w*.49f && x < w*.62f && y > h*.80f) mask = mask or 128
-        return mask
+        if (insideCircle(dCx, dCy - r * 1.05f, dRadius)) mask = mask or 8
+        if (insideCircle(dCx, dCy + r * 1.05f, dRadius)) mask = mask or 4
+        if (insideCircle(dCx - r * 1.05f, dCy, dRadius)) mask = mask or 2
+        if (insideCircle(dCx + r * 1.05f, dCy, dRadius)) mask = mask or 1
+        if (insideCircle(dCx, dCy, r * .72f)) {
+            // Center of the pad is intentionally neutral instead of selecting
+            // a direction accidentally.
+        }
+        if (mask != 0) return mask
+
+        // A and B are separate circular targets with generous touch areas.
+        if (insideCircle(aX, aY, r * 1.05f)) return 16
+        if (insideCircle(bX, bY, r * .95f)) return 32
+
+        // Select and Start are wide pill-shaped touch targets.
+        if (x >= w * .39f && x <= w * .51f && y >= h * .82f && y <= h * .96f) return 64
+        if (x >= w * .51f && x <= w * .63f && y >= h * .82f && y <= h * .96f) return 128
+        return 0
     }
 
-    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
-        val action = event.actionMasked
-        if (event.y < 62f && activeTouches.size() == 0) return super.dispatchTouchEvent(event)
-        when (action) {
-            MotionEvent.ACTION_DOWN -> {
-                activeTouches.clear()
-                activeTouches.put(event.getPointerId(0), controlMaskAt(event.getX(0), event.getY(0)))
-            }
-            MotionEvent.ACTION_POINTER_DOWN -> {
-                val i = event.actionIndex
-                activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
-            }
-            MotionEvent.ACTION_MOVE -> for (i in 0 until event.pointerCount) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
-            MotionEvent.ACTION_POINTER_UP -> {
-                val lifted = event.actionIndex
-                activeTouches.delete(event.getPointerId(lifted))
-                for (i in 0 until event.pointerCount) if (i != lifted) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> activeTouches.clear()
-        }
+    private fun refreshTouchMask() {
         var mask = 0
         for (i in 0 until activeTouches.size()) mask = mask or activeTouches.valueAt(i)
         nativeButtons(mask)
         screen.invalidate()
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val action = event.actionMasked
+        // Leave the top toolbar to the normal Android button handling.
+        if (event.y < 62f && activeTouches.size() == 0) return super.dispatchTouchEvent(event)
+
+        when (action) {
+            MotionEvent.ACTION_DOWN -> {
+                activeTouches.clear()
+                activeTouches.put(event.getPointerId(0), controlMaskAt(event.getX(0), event.getY(0)))
+                refreshTouchMask()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                val i = event.actionIndex
+                activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
+                refreshTouchMask()
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                for (i in 0 until event.pointerCount) {
+                    activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
+                }
+                refreshTouchMask()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                val lifted = event.actionIndex
+                activeTouches.delete(event.getPointerId(lifted))
+                // Recalculate every remaining finger using its current position.
+                for (i in 0 until event.pointerCount) {
+                    if (i != lifted) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
+                }
+                refreshTouchMask()
+                return true
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                activeTouches.clear()
+                nativeButtons(0)
+                screen.invalidate()
+                return true
+            }
+        }
         return true
     }
 
@@ -210,32 +258,82 @@ class MainActivity : Activity() {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val bitmap = Bitmap.createBitmap(256, 240, Bitmap.Config.ARGB_8888)
         init { isClickable = true; isFocusable = true; isFocusableInTouchMode = true }
+
         override fun onDraw(c: Canvas) {
             val pixels = nativeFrame()
             if (pixels.size == 256*240) bitmap.setPixels(pixels, 0, 256, 0, 0, 256, 240)
             val scale = minOf(width / 256f, height / 240f)
-            val left = (width - 256f*scale)/2f; val top = (height - 240f*scale)/2f
+            val left = (width - 256f*scale)/2f
+            val top = (height - 240f*scale)/2f
             c.drawColor(Color.BLACK)
             c.drawBitmap(bitmap, null, RectF(left, top, left+256f*scale, top+240f*scale), paint)
             drawControls(c)
         }
+
         private fun drawControls(c: Canvas) {
-            paint.alpha=150; paint.color=Color.WHITE
-            val r=minOf(width,height)*.09f; val cx=width*.16f; val cy=height*.77f
-            c.drawCircle(cx,cy,r,paint); c.drawCircle(cx-r*1.15f,cy,r*.55f,paint); c.drawCircle(cx+r*1.15f,cy,r*.55f,paint); c.drawCircle(cx,cy-r*1.15f,r*.55f,paint); c.drawCircle(cx,cy+r*1.15f,r*.55f,paint)
-            val bx=width*.84f; val by=height*.77f
-            c.drawCircle(bx,by,r,paint); c.drawCircle(bx-r*1.1f,by+r*.65f,r*.72f,paint)
-            paint.textAlign=Paint.Align.CENTER; paint.textSize=r*.55f; paint.color=Color.DKGRAY; paint.alpha=230
-            c.drawText("A",bx,by+r*.2f,paint); c.drawText("B",bx-r*1.1f,by+r*.65f+r*.2f,paint)
-            paint.alpha=150
-            c.drawRoundRect(RectF(width*.43f,height*.86f,width*.50f,height*.91f),12f,12f,paint)
-            c.drawRoundRect(RectF(width*.51f,height*.86f,width*.58f,height*.91f),12f,12f,paint)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            val r = minOf(w, h) * .105f
+            val dCx = w * .16f
+            val dCy = h * .77f
+            val aX = w * .84f
+            val aY = h * .77f
+            val bX = w * .72f
+            val bY = h * .86f
+
+            paint.style = Paint.Style.FILL
+            paint.alpha = 145
+            paint.color = Color.WHITE
+            c.drawCircle(dCx, dCy, r, paint)
+            c.drawCircle(dCx-r*1.05f, dCy, r*.55f, paint)
+            c.drawCircle(dCx+r*1.05f, dCy, r*.55f, paint)
+            c.drawCircle(dCx, dCy-r*1.05f, r*.55f, paint)
+            c.drawCircle(dCx, dCy+r*1.05f, r*.55f, paint)
+
+            c.drawCircle(aX, aY, r, paint)
+            c.drawCircle(bX, bY, r*.9f, paint)
+
+            paint.textAlign = Paint.Align.CENTER
+            paint.textSize = r*.55f
+            paint.color = Color.DKGRAY
+            paint.alpha = 230
+            c.drawText("A", aX, aY+r*.2f, paint)
+            c.drawText("B", bX, bY+r*.2f, paint)
+
+            paint.alpha = 145
+            paint.color = Color.WHITE
+            c.drawRoundRect(RectF(w*.39f,h*.82f,w*.51f,h*.96f),16f,16f,paint)
+            c.drawRoundRect(RectF(w*.51f,h*.82f,w*.63f,h*.96f),16f,16f,paint)
+            paint.color = Color.DKGRAY
+            paint.alpha = 230
+            paint.textSize = r*.38f
+            c.drawText("SELECT", w*.45f, h*.90f, paint)
+            c.drawText("START", w*.57f, h*.90f, paint)
+
+            // Highlight controls currently held down so touch input is easy to
+            // verify without relying on the game itself.
+            var held = 0
+            for (i in 0 until activeTouches.size()) held = held or activeTouches.valueAt(i)
+            paint.color = Color.YELLOW
+            paint.alpha = 210
+            if ((held and 8) != 0) c.drawCircle(dCx, dCy-r*1.05f, r*.56f, paint)
+            if ((held and 4) != 0) c.drawCircle(dCx, dCy+r*1.05f, r*.56f, paint)
+            if ((held and 2) != 0) c.drawCircle(dCx-r*1.05f, dCy, r*.56f, paint)
+            if ((held and 1) != 0) c.drawCircle(dCx+r*1.05f, dCy, r*.56f, paint)
+            if ((held and 16) != 0) c.drawCircle(aX, aY, r*.88f, paint)
+            if ((held and 32) != 0) c.drawCircle(bX, bY, r*.78f, paint)
+            if ((held and 64) != 0) c.drawRoundRect(RectF(w*.39f,h*.82f,w*.51f,h*.96f),16f,16f,paint)
+            if ((held and 128) != 0) c.drawRoundRect(RectF(w*.51f,h*.82f,w*.63f,h*.96f),16f,16f,paint)
         }
+
         override fun onTouchEvent(e: MotionEvent): Boolean = true
     }
 
     override fun onDestroy() {
-        running=false; audioRunning=false; activeTouches.clear(); nativeButtons(0)
+        running=false
+        audioRunning=false
+        activeTouches.clear()
+        nativeButtons(0)
         try { audio?.pause() } catch (_: Exception) { }
         try { audio?.flush() } catch (_: Exception) { }
         try { audio?.release() } catch (_: Exception) { }
