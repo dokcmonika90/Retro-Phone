@@ -2,7 +2,9 @@ from pathlib import Path
 
 native = Path('app/src/main/cpp/native.cpp')
 s = native.read_text()
-s = s.replace('std::array<int32_t,65536>ji{};std::vector<Block>jb;std::array<uint32_t,W*H>fb{};double phase=0,freq=0;uint8_t vol=0;', 'std::array<int32_t,65536>ji{};std::vector<Block>jb;std::array<uint32_t,W*H>fb{};double phase=0,freq=0;uint8_t vol=0;uint16_t vaddr=0;bool ppuLatch=false;')
+# Keep this build patch script idempotent. The current native core already
+# declares vaddr/ppuLatch and implements the PPU registers, so do not inject
+# duplicate members into the Emu struct.
 s = s.replace('if(r==0x2002){uint8_t v=ppustatus;ppustatus&=127;return v;}if(r==0x2004)return oam[0];return 0;', 'if(r==0x2002){uint8_t v=ppustatus;ppustatus&=127;ppuLatch=false;return v;}if(r==0x2004)return oam[0];if(r==0x2007){uint8_t v=vram[vaddr&0x0fff];vaddr+=(ppuctrl&4)?32:1;return v;}return 0;')
 s = s.replace('if(r==0x2000)ppuctrl=v;if(r==0x2007)vram[0]=v;', 'if(r==0x2000)ppuctrl=v;if(r==0x2005||r==0x2006){ppuLatch=!ppuLatch;if(r==0x2006){if(!ppuLatch)vaddr=(vaddr&0x00ff)|((uint16_t(v)&0x3f)<<8);else vaddr=(vaddr&0x3f00)|v;}}if(r==0x2007){vram[vaddr&0x0fff]=v;vaddr+=(ppuctrl&4)?32:1;}')
 s = s.replace('bool jit(uint16_t pc){if(ji[pc]>=0)return true;std::vector<uint32_t>v;uint16_t q=pc;for(int k=0;k<16;k++){', 'bool jit(uint16_t pc){if(ji[pc]>=0)return true;std::vector<uint32_t>v;uint16_t q=pc;int translated=0;for(int k=0;k<16;k++){')
