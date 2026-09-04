@@ -94,19 +94,14 @@ class MainActivity : Activity() {
             }
             val bytes = unwrapped.first
             val mapper = ((bytes[6].toInt() and 0xF0) shr 4) or (bytes[7].toInt() and 0xF0)
-            if (mapper != 0 && mapper != 4) {
-                status.text = "  Mapper $mapper not supported yet"
-                Toast.makeText(this, "This ROM uses mapper $mapper. Mapper 0 and Mapper 4 are supported in this build.", Toast.LENGTH_LONG).show()
-                return
-            }
             val ok = nativeLoad(bytes)
             if (ok) {
                 nativeReset()
                 status.text = "  ROM loaded: ${unwrapped.second} (Mapper $mapper, ${bytes.size / 1024} KB)"
                 Toast.makeText(this, "NES Mapper $mapper ROM loaded", Toast.LENGTH_SHORT).show()
             } else {
-                status.text = "  ROM rejected by emulator"
-                Toast.makeText(this, "NES ROM could not be loaded", Toast.LENGTH_LONG).show()
+                status.text = "  Mapper $mapper is not implemented by the current core"
+                Toast.makeText(this, "LaiNES could not load Mapper $mapper", Toast.LENGTH_LONG).show()
             }
             screen.invalidate()
         } catch (e: Exception) {
@@ -136,9 +131,8 @@ class MainActivity : Activity() {
                         val pcm = nativeAudio()
                         if (pcm.isNotEmpty()) audio?.write(pcm, 0, pcm.size, AudioTrack.WRITE_BLOCKING)
                         else Thread.sleep(2)
-                    } catch (_: InterruptedException) {
-                        break
-                    } catch (e: Exception) {
+                    } catch (_: InterruptedException) { break }
+                    catch (e: Exception) {
                         runOnUiThread { status.text = "  Audio error: ${e.message ?: "unknown"}" }
                         break
                     }
@@ -178,33 +172,16 @@ class MainActivity : Activity() {
         if (near(cx, cy+d*.70f, d*.62f)) mask = mask or 4
         if (near(cx-d*.70f, cy, d*.62f)) mask = mask or 2
         if (near(cx+d*.70f, cy, d*.62f)) mask = mask or 1
-
-        // A has a large dedicated region on the lower-right side.
-        if (near(bx, by, d*.95f) ||
-            (x > w*.70f && x < w*.99f && y > h*.55f && y < h*.99f)) mask = mask or 16
-
-        // B has a separate region left of A.
-        if (near(bx-d*.90f, by+d*.55f, d*.75f) ||
-            (x > w*.53f && x < w*.70f && y > h*.65f && y < h*.99f)) mask = mask or 32
-
+        if (near(bx, by, d*.95f) || (x > w*.70f && x < w*.99f && y > h*.55f && y < h*.99f)) mask = mask or 16
+        if (near(bx-d*.90f, by+d*.55f, d*.75f) || (x > w*.53f && x < w*.70f && y > h*.65f && y < h*.99f)) mask = mask or 32
         if (x > w*.40f && x < w*.52f && y > h*.80f) mask = mask or 64
         if (x > w*.49f && x < w*.62f && y > h*.80f) mask = mask or 128
         return mask
     }
 
-    private fun rebuildTouchMask(event: MotionEvent): Int {
-        var mask = 0
-        for (i in 0 until event.pointerCount) {
-            mask = mask or controlMaskAt(event.getX(i), event.getY(i))
-        }
-        return mask
-    }
-
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         val action = event.actionMasked
-        // Let the top toolbar's real Android buttons receive their normal touch events.
         if (event.y < 62f && activeTouches.size() == 0) return super.dispatchTouchEvent(event)
-
         when (action) {
             MotionEvent.ACTION_DOWN -> {
                 activeTouches.clear()
@@ -214,83 +191,51 @@ class MainActivity : Activity() {
                 val i = event.actionIndex
                 activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
             }
-            MotionEvent.ACTION_MOVE -> {
-                for (i in 0 until event.pointerCount) {
-                    activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
-                }
-            }
+            MotionEvent.ACTION_MOVE -> for (i in 0 until event.pointerCount) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
             MotionEvent.ACTION_POINTER_UP -> {
                 val lifted = event.actionIndex
                 activeTouches.delete(event.getPointerId(lifted))
-                for (i in 0 until event.pointerCount) {
-                    if (i != lifted) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
-                }
+                for (i in 0 until event.pointerCount) if (i != lifted) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                activeTouches.clear()
-            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> activeTouches.clear()
         }
-
         var mask = 0
         for (i in 0 until activeTouches.size()) mask = mask or activeTouches.valueAt(i)
         nativeButtons(mask)
         screen.invalidate()
-
-        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-            return true
-        }
         return true
     }
 
     inner class GameView : View(this) {
         private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
         private val bitmap = Bitmap.createBitmap(256, 240, Bitmap.Config.ARGB_8888)
-
-        init {
-            isClickable = true
-            isFocusable = true
-            isFocusableInTouchMode = true
-        }
-
+        init { isClickable = true; isFocusable = true; isFocusableInTouchMode = true }
         override fun onDraw(c: Canvas) {
             val pixels = nativeFrame()
-            if (pixels.size == 256 * 240) bitmap.setPixels(pixels, 0, 256, 0, 0, 256, 240)
+            if (pixels.size == 256*240) bitmap.setPixels(pixels, 0, 256, 0, 0, 256, 240)
             val scale = minOf(width / 256f, height / 240f)
-            val left = (width - 256f * scale) / 2f
-            val top = (height - 240f * scale) / 2f
+            val left = (width - 256f*scale)/2f; val top = (height - 240f*scale)/2f
             c.drawColor(Color.BLACK)
-            c.drawBitmap(bitmap, null, RectF(left, top, left + 256f*scale, top + 240f*scale), paint)
+            c.drawBitmap(bitmap, null, RectF(left, top, left+256f*scale, top+240f*scale), paint)
             drawControls(c)
         }
-
         private fun drawControls(c: Canvas) {
-            paint.alpha = 150; paint.color = Color.WHITE
-            val r = minOf(width, height) * .09f
-            val cx = width * .16f; val cy = height * .77f
-            c.drawCircle(cx, cy, r, paint)
-            c.drawCircle(cx-r*1.15f, cy, r*.55f, paint)
-            c.drawCircle(cx+r*1.15f, cy, r*.55f, paint)
-            c.drawCircle(cx, cy-r*1.15f, r*.55f, paint)
-            c.drawCircle(cx, cy+r*1.15f, r*.55f, paint)
-            val bx = width * .84f; val by = height * .77f
-            c.drawCircle(bx, by, r, paint)
-            c.drawCircle(bx-r*1.1f, by+r*.65f, r*.72f, paint)
-            paint.textAlign = Paint.Align.CENTER; paint.textSize = r*.55f; paint.color = Color.DKGRAY; paint.alpha = 230
-            c.drawText("A", bx, by+r*.2f, paint)
-            c.drawText("B", bx-r*1.1f, by+r*.65f+r*.2f, paint)
-            paint.alpha = 150
+            paint.alpha=150; paint.color=Color.WHITE
+            val r=minOf(width,height)*.09f; val cx=width*.16f; val cy=height*.77f
+            c.drawCircle(cx,cy,r,paint); c.drawCircle(cx-r*1.15f,cy,r*.55f,paint); c.drawCircle(cx+r*1.15f,cy,r*.55f,paint); c.drawCircle(cx,cy-r*1.15f,r*.55f,paint); c.drawCircle(cx,cy+r*1.15f,r*.55f,paint)
+            val bx=width*.84f; val by=height*.77f
+            c.drawCircle(bx,by,r,paint); c.drawCircle(bx-r*1.1f,by+r*.65f,r*.72f,paint)
+            paint.textAlign=Paint.Align.CENTER; paint.textSize=r*.55f; paint.color=Color.DKGRAY; paint.alpha=230
+            c.drawText("A",bx,by+r*.2f,paint); c.drawText("B",bx-r*1.1f,by+r*.65f+r*.2f,paint)
+            paint.alpha=150
             c.drawRoundRect(RectF(width*.43f,height*.86f,width*.50f,height*.91f),12f,12f,paint)
             c.drawRoundRect(RectF(width*.51f,height*.86f,width*.58f,height*.91f),12f,12f,paint)
         }
-
         override fun onTouchEvent(e: MotionEvent): Boolean = true
     }
 
     override fun onDestroy() {
-        running = false
-        audioRunning = false
-        activeTouches.clear()
-        nativeButtons(0)
+        running=false; audioRunning=false; activeTouches.clear(); nativeButtons(0)
         try { audio?.pause() } catch (_: Exception) { }
         try { audio?.flush() } catch (_: Exception) { }
         try { audio?.release() } catch (_: Exception) { }
