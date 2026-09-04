@@ -24,9 +24,11 @@ class MainActivity : Activity() {
 
     private lateinit var screen: GameView
     private lateinit var status: TextView
+    private lateinit var toolbar: LinearLayout
     private var audio: AudioTrack? = null
     private var running = false
     private var audioRunning = false
+    private var gameplayFullscreen = false
     private val frameMs = 16L
     private val activeTouches = SparseIntArray()
 
@@ -34,19 +36,88 @@ class MainActivity : Activity() {
         super.onCreate(state)
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        enterImmersiveUi()
+
         screen = GameView()
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
-        root.addView(screen, FrameLayout.LayoutParams(-1, -1))
-        val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(18, 10, 18, 10); setBackgroundColor(0xAA101010.toInt()) }
-        val load = Button(this).apply { text = "LOAD NES"; setOnClickListener { pickRom() } }
-        val reset = Button(this).apply { text = "RESET"; setOnClickListener { nativeReset(); status.text = "  Reset"; screen.invalidate() } }
-        status = TextView(this).apply { text = "  ${nativeVersion()}"; setTextColor(Color.WHITE); textSize = 13f; gravity = Gravity.CENTER_VERTICAL }
-        bar.addView(load); bar.addView(reset); bar.addView(status, LinearLayout.LayoutParams(0, -1, 1f))
-        root.addView(bar, FrameLayout.LayoutParams(-1, 62, Gravity.TOP))
+        root.addView(screen, FrameLayout.LayoutParams(-1, -1).apply { topMargin = dp(62) })
+
+        toolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            setBackgroundColor(0xCC101010.toInt())
+            elevation = dp(4).toFloat()
+        }
+        val load = Button(this).apply {
+            text = "LOAD NES"
+            setOnClickListener { pickRom() }
+        }
+        val reset = Button(this).apply {
+            text = "RESET"
+            setOnClickListener { nativeReset(); status.text = "  Reset"; screen.invalidate() }
+        }
+        val fullscreen = Button(this).apply {
+            text = "FULLSCREEN"
+            setOnClickListener { setGameplayFullscreen(!gameplayFullscreen) }
+        }
+        status = TextView(this).apply {
+            text = "  ${nativeVersion()}"
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            gravity = Gravity.CENTER_VERTICAL
+            maxLines = 2
+        }
+        toolbar.addView(load)
+        toolbar.addView(reset)
+        toolbar.addView(fullscreen)
+        toolbar.addView(status, LinearLayout.LayoutParams(0, -1, 1f))
+        root.addView(toolbar, FrameLayout.LayoutParams(-1, dp(62), Gravity.TOP))
+
         setContentView(root)
         startAudio()
         startLoop()
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density + 0.5f).toInt()
+
+    private fun enterImmersiveUi() {
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        )
+    }
+
+    private fun setGameplayFullscreen(fullscreen: Boolean) {
+        gameplayFullscreen = fullscreen
+        toolbar.visibility = if (fullscreen) View.GONE else View.VISIBLE
+        val params = screen.layoutParams as FrameLayout.LayoutParams
+        params.topMargin = if (fullscreen) 0 else dp(62)
+        screen.layoutParams = params
+        status.text = if (nativeIsLoaded()) {
+            if (fullscreen) "  Fullscreen gameplay" else "  Gameplay controls visible"
+        } else {
+            if (fullscreen) "  Fullscreen — tap BACK to exit" else "  ${nativeVersion()}"
+        }
+        enterImmersiveUi()
+        screen.invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) enterImmersiveUi()
+    }
+
+    override fun onBackPressed() {
+        if (gameplayFullscreen) {
+            setGameplayFullscreen(false)
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun pickRom() {
@@ -157,14 +228,10 @@ class MainActivity : Activity() {
         }.start()
     }
 
-    // Touch controls use exclusive hit regions. This prevents the old large
-    // catch-all regions from pressing A and B together and makes every control
-    // reachable on phones with different aspect ratios.
     private fun controlMaskAt(x: Float, y: Float): Int {
         val w = screen.width.toFloat().coerceAtLeast(1f)
         val h = screen.height.toFloat().coerceAtLeast(1f)
         val r = minOf(w, h) * .105f
-
         val dCx = w * .16f
         val dCy = h * .77f
         val aX = w * .84f
@@ -178,25 +245,15 @@ class MainActivity : Activity() {
             return dx * dx + dy * dy <= radius * radius
         }
 
-        // D-pad uses four overlapping directional zones. A single finger can
-        // still produce diagonals, which real NES games commonly use.
         val dRadius = r * .72f
         var mask = 0
         if (insideCircle(dCx, dCy - r * 1.05f, dRadius)) mask = mask or 8
         if (insideCircle(dCx, dCy + r * 1.05f, dRadius)) mask = mask or 4
         if (insideCircle(dCx - r * 1.05f, dCy, dRadius)) mask = mask or 2
         if (insideCircle(dCx + r * 1.05f, dCy, dRadius)) mask = mask or 1
-        if (insideCircle(dCx, dCy, r * .72f)) {
-            // Center of the pad is intentionally neutral instead of selecting
-            // a direction accidentally.
-        }
         if (mask != 0) return mask
-
-        // A and B are separate circular targets with generous touch areas.
         if (insideCircle(aX, aY, r * 1.05f)) return 16
         if (insideCircle(bX, bY, r * .95f)) return 32
-
-        // Select and Start are wide pill-shaped touch targets.
         if (x >= w * .39f && x <= w * .51f && y >= h * .82f && y <= h * .96f) return 64
         if (x >= w * .51f && x <= w * .63f && y >= h * .82f && y <= h * .96f) return 128
         return 0
@@ -211,8 +268,8 @@ class MainActivity : Activity() {
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         val action = event.actionMasked
-        // Leave the top toolbar to the normal Android button handling.
-        if (event.y < 62f && activeTouches.size() == 0) return super.dispatchTouchEvent(event)
+        val toolbarHeight = if (gameplayFullscreen) 0f else dp(62).toFloat()
+        if (event.y < toolbarHeight && activeTouches.size() == 0) return super.dispatchTouchEvent(event)
 
         when (action) {
             MotionEvent.ACTION_DOWN -> {
@@ -237,7 +294,6 @@ class MainActivity : Activity() {
             MotionEvent.ACTION_POINTER_UP -> {
                 val lifted = event.actionIndex
                 activeTouches.delete(event.getPointerId(lifted))
-                // Recalculate every remaining finger using its current position.
                 for (i in 0 until event.pointerCount) {
                     if (i != lifted) activeTouches.put(event.getPointerId(i), controlMaskAt(event.getX(i), event.getY(i)))
                 }
@@ -262,11 +318,17 @@ class MainActivity : Activity() {
         override fun onDraw(c: Canvas) {
             val pixels = nativeFrame()
             if (pixels.size == 256*240) bitmap.setPixels(pixels, 0, 256, 0, 0, 256, 240)
-            val scale = minOf(width / 256f, height / 240f)
-            val left = (width - 256f*scale)/2f
-            val top = (height - 240f*scale)/2f
             c.drawColor(Color.BLACK)
-            c.drawBitmap(bitmap, null, RectF(left, top, left+256f*scale, top+240f*scale), paint)
+
+            // Integer scaling keeps NES pixels crisp. If the display cannot fit
+            // an integer scale, fall back to the largest aspect-correct scale.
+            val integerScale = minOf(width / 256, height / 240)
+            val scale = if (integerScale >= 1) integerScale.toFloat() else minOf(width / 256f, height / 240f)
+            val drawW = 256f * scale
+            val drawH = 240f * scale
+            val left = (width - drawW) / 2f
+            val top = (height - drawH) / 2f
+            c.drawBitmap(bitmap, null, RectF(left, top, left + drawW, top + drawH), paint)
             drawControls(c)
         }
 
@@ -289,7 +351,6 @@ class MainActivity : Activity() {
             c.drawCircle(dCx+r*1.05f, dCy, r*.55f, paint)
             c.drawCircle(dCx, dCy-r*1.05f, r*.55f, paint)
             c.drawCircle(dCx, dCy+r*1.05f, r*.55f, paint)
-
             c.drawCircle(aX, aY, r, paint)
             c.drawCircle(bX, bY, r*.9f, paint)
 
@@ -310,8 +371,6 @@ class MainActivity : Activity() {
             c.drawText("SELECT", w*.45f, h*.90f, paint)
             c.drawText("START", w*.57f, h*.90f, paint)
 
-            // Highlight controls currently held down so touch input is easy to
-            // verify without relying on the game itself.
             var held = 0
             for (i in 0 until activeTouches.size()) held = held or activeTouches.valueAt(i)
             paint.color = Color.YELLOW
