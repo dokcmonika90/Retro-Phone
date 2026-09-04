@@ -2,15 +2,17 @@ from pathlib import Path
 
 native = Path('app/src/main/cpp/native.cpp')
 s = native.read_text()
-# Keep this build patch script idempotent. The current native core already
-# declares vaddr/ppuLatch and implements the PPU registers, so do not inject
-# duplicate members into the Emu struct.
+# Keep the build patch idempotent. The current native core already declares
+# vaddr/ppuLatch and implements the PPU registers, so do not inject duplicate members.
 s = s.replace('if(r==0x2002){uint8_t v=ppustatus;ppustatus&=127;return v;}if(r==0x2004)return oam[0];return 0;', 'if(r==0x2002){uint8_t v=ppustatus;ppustatus&=127;ppuLatch=false;return v;}if(r==0x2004)return oam[0];if(r==0x2007){uint8_t v=vram[vaddr&0x0fff];vaddr+=(ppuctrl&4)?32:1;return v;}return 0;')
 s = s.replace('if(r==0x2000)ppuctrl=v;if(r==0x2007)vram[0]=v;', 'if(r==0x2000)ppuctrl=v;if(r==0x2005||r==0x2006){ppuLatch=!ppuLatch;if(r==0x2006){if(!ppuLatch)vaddr=(vaddr&0x00ff)|((uint16_t(v)&0x3f)<<8);else vaddr=(vaddr&0x3f00)|v;}}if(r==0x2007){vram[vaddr&0x0fff]=v;vaddr+=(ppuctrl&4)?32:1;}')
 s = s.replace('bool jit(uint16_t pc){if(ji[pc]>=0)return true;std::vector<uint32_t>v;uint16_t q=pc;for(int k=0;k<16;k++){', 'bool jit(uint16_t pc){if(ji[pc]>=0)return true;std::vector<uint32_t>v;uint16_t q=pc;int translated=0;for(int k=0;k<16;k++){')
 s = s.replace('q++;}else if(o==0xe8){', 'q++;translated++;}else if(o==0xe8){')
 s = s.replace('q++;}else break;}v.push_back(0xd65f03c0);', 'q++;translated++;}else break;}if(!translated)return false;v.push_back(0xd65f03c0);')
 s = s.replace('std::fill(std::begin(pal),std::end(pal),0);std::fill(fb.begin(),fb.end(),0xff000000);', 'std::fill(std::begin(pal),std::end(pal),0);pal[0]=0x0f;pal[1]=0x01;pal[2]=0x21;pal[3]=0x31;vaddr=0;ppuLatch=false;std::fill(fb.begin(),fb.end(),0xff000000);')
+# Run a complete NTSC-sized CPU frame rather than only ~40% of a frame. The
+# previous short run made VBlank/NMI and game initialization visibly oscillate.
+s = s.replace('void frameRun(){if(!loaded){for(int y=0;y<H;y++)for(int x=0;x<W;x++){uint8_t v=((x>>4)^(y>>4))&15;fb[y*W+x]=0xff000000|(v*17<<16)|(v*9<<8)|(v*5);}return;}run(12000);render();}', 'void frameRun(){if(!loaded){for(int y=0;y<H;y++)for(int x=0;x<W;x++){uint8_t v=((x>>4)^(y>>4))&15;fb[y*W+x]=0xff000000|(v*17<<16)|(v*9<<8)|(v*5);}return;}run(29780);render();}')
 native.write_text(s)
 
 activity = Path('app/src/main/java/com/dokcmonika90/retrophone/MainActivity.kt')
