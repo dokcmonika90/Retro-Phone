@@ -1,4 +1,9 @@
-# Retro Phone uses the BSD-2-Clause licensed LaiNES NES core as a git submodule.
+# Retro Phone emulator cores
 [submodule "third_party/LaiNES"]
 	path = third_party/LaiNES
 	url = https://github.com/AndreaOrru/LaiNES.git
+
+# Snes9x provides the SNES core; Retro Phone integrates its libretro core through the multi-core backend.
+[submodule "third_party/Snes9x"]
+	path = third_party/Snes9x
+	url = https://github.com/snes9xgit/snes9x.git
