@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "description": "Retro Phone pluggable emulator-core registry. Sources are upstream projects; Retro Phone does not bundle ROMs.",
+  "sourceReference": "https://github.com/alnacle/awesome-emulators",
+  "cores": [
+    {"id":"laines-nes","name":"LaiNES","system":"nes","systems":["nes"],"extensions":["nes","fds"],"status":"integrated","source":"https://github.com/AndreaOrru/LaiNES","license":"BSD-2-Clause"},
+    {"id":"snes9x","name":"Snes9x","system":"snes","systems":["snes"],"extensions":["sfc","smc","fig"],"status":"planned","source":"https://github.com/snes9xgit/snes9x","license":"GPL-2.0"},
+    {"id":"mgba","name":"mGBA","system":"game-boy-advance","systems":["game-boy","game-boy-color","game-boy-advance"],"extensions":["gb","gbc","gba"],"status":"planned","source":"https://github.com/mgba-emu/mgba","license":"MPL-2.0"},
+    {"id":"sameboy","name":"SameBoy","system":"game-boy","systems":["game-boy","game-boy-color"],"extensions":["gb","gbc"],"status":"planned","source":"https://github.com/LIJI32/SameBoy","license":"MIT"},
+    {"id":"genesis-plus-gx","name":"Genesis Plus GX","system":"genesis","systems":["sg-1000","master-system","game-gear","genesis","sega-cd"],"extensions":["sms","gg","md","gen","bin","cue"],"status":"planned","source":"https://github.com/ekeeke/Genesis-Plus-GX","license":"Non-commercial"},
+    {"id":"mednafen","name":"Mednafen","system":"multi","systems":["pc-engine","playstation","game-boy","game-boy-color","game-boy-advance","sega-cd","saturn"],"extensions":["pce","cue","bin","iso","m3u"],"status":"planned","source":"https://github.com/mednafen/mednafen","license":"GPL-2.0"},
+    {"id":"mesen","name":"Mesen","system":"nes","systems":["nes","fds"],"extensions":["nes","fds"],"status":"planned","source":"https://github.com/SourMesen/Mesen2","license":"GPL-3.0"},
+    {"id":"melonds","name":"melonDS","system":"ds","systems":["ds"],"extensions":["nds"],"status":"planned","source":"https://github.com/melonDS-emu/melonDS","license":"GPL-2.0"},
+    {"id":"desmume","name":"DeSmuME","system":"ds","systems":["ds"],"extensions":["nds"],"status":"planned","source":"https://github.com/TASEmulators/desmume","license":"GPL-2.0"},
+    {"id":"dolphin","name":"Dolphin","system":"gamecube-wii","systems":["gamecube","wii"],"extensions":["iso","gcm","wbfs","rvz"],"status":"planned","source":"https://github.com/dolphin-emu/dolphin","license":"GPL-2.0"},
+    {"id":"mupen64plus","name":"Mupen64Plus","system":"n64","systems":["n64"],"extensions":["n64","z64","v64"],"status":"planned","source":"https://github.com/mupen64plus","license":"GPL-2.0"},
+    {"id":"flycast","name":"Flycast","system":"dreamcast","systems":["dreamcast","naomi","atomiswave"],"extensions":["gdi","cdi","chd"],"status":"planned","source":"https://github.com/flyinghead/flycast","license":"GPL-2.0"},
+    {"id":"pcsx-rearmed","name":"PCSX-ReARMed","system":"playstation","systems":["playstation"],"extensions":["cue","bin","iso","chd"],"status":"planned","source":"https://github.com/libretro/pcsx_rearmed","license":"GPL-2.0"},
+    {"id":"ppsspp","name":"PPSSPP","system":"psp","systems":["psp"],"extensions":["iso","cso","pbp"],"status":"planned","source":"https://github.com/hrydgard/ppsspp","license":"GPL-2.0"},
+    {"id":"mame","name":"MAME","system":"arcade-mame","systems":["arcade-mame"],"extensions":["zip","7z"],"status":"planned","source":"https://github.com/mamedev/mame","license":"BSD-3-Clause"},
+    {"id":"finalburn-neo","name":"FinalBurn Neo","system":"arcade","systems":["arcade-mame","cps1","cps2","cps3","neo-geo"],"extensions":["zip"],"status":"planned","source":"https://github.com/finalburnneo/FBNeo","license":"GPL-2.0"},
+    {"id":"stella","name":"Stella","system":"atari-2600","systems":["atari-2600"],"extensions":["a26","bin"],"status":"planned","source":"https://github.com/stella-emu/stella","license":"GPL-2.0"},
+    {"id":"atari800","name":"Atari800","system":"atari-800","systems":["atari-800","atari-5200"],"extensions":["atr","xfd","xex"],"status":"planned","source":"https://github.com/atari800/atari800","license":"GPL-2.0"},
+    {"id":"vice","name":"VICE","system":"c64","systems":["c64","vic-20","plus4"],"extensions":["d64","t64","prg","crt"],"status":"planned","source":"https://github.com/VICE-Team/svn-mirror","license":"GPL-2.0"},
+    {"id":"fuse","name":"Fuse","system":"zx-spectrum","systems":["zx-spectrum"],"extensions":["tap","tzx","z80","sna"],"status":"planned","source":"https://github.com/vexorian/fuse-emulator","license":"GPL-2.0"}
+  ]
+}
