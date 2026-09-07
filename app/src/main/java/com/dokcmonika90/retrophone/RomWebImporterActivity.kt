@@ -20,8 +20,6 @@ import java.util.regex.Pattern
  * or DRM.
  */
 class RomWebImporterActivity : Activity() {
-    // One dedicated ROM folder for everything Retro Phone imports.
-    // External app-specific storage avoids filling the app's private internal storage.
     private val romDirectory by lazy {
         File(getExternalFilesDir(null), "ROMs").apply { mkdirs() }
     }
@@ -59,6 +57,10 @@ class RomWebImporterActivity : Activity() {
             text = "SCAN WEBSITE"
             setOnClickListener { scanWebsite() }
         }
+        val library = Button(this).apply {
+            text = "OPEN MULTI-CONSOLE LIBRARY"
+            setOnClickListener { startActivity(Intent(this@RomWebImporterActivity, MultiConsoleLibraryActivity::class.java)) }
+        }
         val back = Button(this).apply {
             text = "BACK TO RETRO PHONE"
             setOnClickListener { finish() }
@@ -73,6 +75,7 @@ class RomWebImporterActivity : Activity() {
         root.addView(title)
         root.addView(urlBox)
         root.addView(scan)
+        root.addView(library)
         root.addView(status)
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(back)
