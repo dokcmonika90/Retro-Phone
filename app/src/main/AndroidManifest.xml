@@ -17,5 +17,6 @@
                 <data android:scheme="https" />
             </intent-filter>
         </activity>
+        <activity android:name=".MultiConsoleLibraryActivity" android:screenOrientation="landscape" android:exported="false" />
     </application>
 </manifest>
