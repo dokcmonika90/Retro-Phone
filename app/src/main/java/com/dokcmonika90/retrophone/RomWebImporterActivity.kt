@@ -20,7 +20,11 @@ import java.util.regex.Pattern
  * or DRM.
  */
 class RomWebImporterActivity : Activity() {
-    private val romDirectory by lazy { File(filesDir, "roms").apply { mkdirs() } }
+    // One dedicated ROM folder for everything Retro Phone imports.
+    // External app-specific storage avoids filling the app's private internal storage.
+    private val romDirectory by lazy {
+        File(getExternalFilesDir(null), "ROMs").apply { mkdirs() }
+    }
     private lateinit var urlBox: EditText
     private lateinit var status: TextView
     private lateinit var links: LinearLayout
@@ -60,7 +64,7 @@ class RomWebImporterActivity : Activity() {
             setOnClickListener { finish() }
         }
         status = TextView(this).apply {
-            text = "Only download ROMs you are legally allowed to obtain."
+            text = "ROMs are saved to Retro Phone's ROMs folder.\nOnly download ROMs you are legally allowed to obtain."
             setTextColor(Color.LTGRAY)
             setPadding(0, 16, 0, 16)
         }
@@ -137,7 +141,7 @@ class RomWebImporterActivity : Activity() {
                 connection.inputStream.use { input -> target.outputStream().use { output -> input.copyTo(output) } }
                 connection.disconnect()
                 runOnUiThread {
-                    status.text = "Downloaded: ${target.name}\nSaved in Retro Phone ROM storage."
+                    status.text = "Downloaded: ${target.name}\nSaved to Retro Phone/ROMs."
                     Toast.makeText(this, "ROM downloaded", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
