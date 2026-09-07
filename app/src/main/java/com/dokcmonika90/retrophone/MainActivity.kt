@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.util.SparseIntArray
 import android.view.*
 import android.widget.*
+import java.io.File
 import java.util.zip.ZipInputStream
 import kotlin.math.max
 
@@ -31,9 +32,17 @@ class MainActivity : Activity() {
     private val frameMs = 16L
     private val activeTouches = SparseIntArray()
     private val libraryPrefs by lazy { getSharedPreferences("rom_library", MODE_PRIVATE) }
-    private val romDirectory by lazy { java.io.File(filesDir, "roms").apply { mkdirs() } }
+
+    // All ROMs now use the same dedicated app-specific external ROM folder as the web importer.
+    // This keeps downloaded and manually imported ROMs in one library location.
+    private val romDirectory by lazy {
+        File(getExternalFilesDir(null), "ROMs").apply { mkdirs() }
+    }
+    private val oldRomDirectory by lazy { File(filesDir, "roms") }
+
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        migrateOldRoms()
         window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN, WindowManager.LayoutParams.FLAG_FULLSCREEN)
         requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         enterImmersiveUi(); screen = GameView()
@@ -48,6 +57,17 @@ class MainActivity : Activity() {
         toolbar.addView(load);toolbar.addView(library);toolbar.addView(reset);toolbar.addView(fullscreen);toolbar.addView(status,LinearLayout.LayoutParams(0,-1,1f))
         root.addView(toolbar,FrameLayout.LayoutParams(-1,dp(62),Gravity.TOP));setContentView(root);startAudio();startLoop();autoLoadLastRom()
     }
+
+    private fun migrateOldRoms() {
+        try {
+            if (!oldRomDirectory.isDirectory) return
+            oldRomDirectory.listFiles()?.filter { it.isFile }?.forEach { old ->
+                val target = File(romDirectory, old.name)
+                if (!target.exists()) old.copyTo(target, overwrite = false)
+            }
+        } catch (_: Exception) { }
+    }
+
     private fun dp(value:Int)= (value*resources.displayMetrics.density+0.5f).toInt()
     private fun enterImmersiveUi(){window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_LAYOUT_STABLE}
     private fun setGameplayFullscreen(fullscreen:Boolean){gameplayFullscreen=fullscreen;toolbar.visibility=if(fullscreen)View.GONE else View.VISIBLE;val p=screen.layoutParams as FrameLayout.LayoutParams;p.topMargin=if(fullscreen)0 else dp(62);screen.layoutParams=p;status.text=if(nativeIsLoaded()){if(fullscreen)"  Fullscreen gameplay" else "  Gameplay controls visible"}else{if(fullscreen)"  Fullscreen — tap BACK to exit" else "  ${nativeVersion()}"};enterImmersiveUi();screen.invalidate()}
@@ -57,10 +77,10 @@ class MainActivity : Activity() {
     private fun validHeader(b:ByteArray)=b.size>=16&&b[0].toInt()=='N'.code&&b[1].toInt()=='E'.code&&b[2].toInt()=='S'.code&&b[3].toInt()==0x1A
     private fun unwrapRom(data:ByteArray):Pair<ByteArray,String>?{if(validHeader(data))return data to "NES ROM";if(data.size>=4&&data[0].toInt()==0x50&&data[1].toInt()==0x4b){ZipInputStream(data.inputStream()).use{zip->var e=zip.nextEntry;while(e!=null){if(!e.isDirectory&&e.name.lowercase().endsWith(".nes")){val rom=zip.readBytes();if(validHeader(rom))return rom to e.name};e=zip.nextEntry}}};return null}
     private fun mapperOf(bytes:ByteArray)=if(bytes.size>=8)((bytes[6].toInt() and 0xF0) shr 4) or (bytes[7].toInt() and 0xF0) else -1
-    private fun libraryFile(bytes:ByteArray)=java.io.File(romDirectory,"rom_${Integer.toHexString(bytes.contentHashCode())}.nes")
+    private fun libraryFile(bytes:ByteArray)=File(romDirectory,"rom_${Integer.toHexString(bytes.contentHashCode())}.nes")
     private fun saveToLibrary(bytes:ByteArray,name:String){try{val f=libraryFile(bytes);f.writeBytes(bytes);val now=System.currentTimeMillis();libraryPrefs.edit().putString("name_${f.name}",name.substringAfterLast('/')).putString("last_rom",f.name).putLong("played_${f.name}",now).apply();f.setLastModified(now)}catch(_:Exception){}}
-    private fun markPlayed(file:java.io.File){val now=System.currentTimeMillis();libraryPrefs.edit().putString("last_rom",file.name).putLong("played_${file.name}",now).apply();file.setLastModified(now)}
-    private fun autoLoadLastRom(){val name=libraryPrefs.getString("last_rom",null)?:return;val file=java.io.File(romDirectory,name);if(!file.isFile)return;try{val bytes=file.readBytes();if(validHeader(bytes)){loadRomBytes(bytes,libraryPrefs.getString("name_${file.name}",file.name)?:file.name,false);markPlayed(file)}}catch(_:Exception){}}
+    private fun markPlayed(file:File){val now=System.currentTimeMillis();libraryPrefs.edit().putString("last_rom",file.name).putLong("played_${file.name}",now).apply();file.setLastModified(now)}
+    private fun autoLoadLastRom(){val name=libraryPrefs.getString("last_rom",null)?:return;val file=File(romDirectory,name);if(!file.isFile)return;try{val bytes=file.readBytes();if(validHeader(bytes)){loadRomBytes(bytes,libraryPrefs.getString("name_${file.name}",file.name)?:file.name,false);markPlayed(file)}}catch(_:Exception){}}
     private fun showLibrary(){
         val all=romDirectory.listFiles{f->f.isFile&&f.extension.equals("nes",true)}?.toList()?:emptyList()
         val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(dp(18),dp(8),dp(18),dp(8))}
@@ -74,7 +94,7 @@ class MainActivity : Activity() {
         box.addView(search);box.addView(sort);box.addView(favoritesOnly);box.addView(lastLabel);box.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
         fun refresh(){
             list.removeAllViews();val q=search.text.toString().trim().lowercase();val mode=sort.selectedItemPosition
-            val files=all.filter{f->val n=libraryPrefs.getString("name_${f.name}",f.name)?:f.name;(!favoritesOnly.isChecked||libraryPrefs.getBoolean("fav_${f.name}",false))&&(q.isEmpty()||n.lowercase().contains(q))}.sortedWith(when(mode){1->compareBy{libraryPrefs.getString("name_${it.name}",it.name)?.lowercase()?:it.name.lowercase()};2->compareByDescending<java.io.File>{it.length()};else->compareByDescending{libraryPrefs.getLong("played_${it.name}",it.lastModified())}})
+            val files=all.filter{f->val n=libraryPrefs.getString("name_${f.name}",f.name)?:f.name;(!favoritesOnly.isChecked||libraryPrefs.getBoolean("fav_${f.name}",false))&&(q.isEmpty()||n.lowercase().contains(q))}.sortedWith(when(mode){1->compareBy{libraryPrefs.getString("name_${it.name}",it.name)?.lowercase()?:it.name.lowercase()};2->compareByDescending<File>{it.length()};else->compareByDescending{libraryPrefs.getLong("played_${it.name}",it.lastModified())}})
             if(files.isEmpty()){list.addView(TextView(this).apply{text="No matching games.";textSize=17f;setPadding(0,dp(16),0,dp(16))});return}
             files.forEach{file->
                 val name=libraryPrefs.getString("name_${file.name}",file.name)?:file.name;val fav=libraryPrefs.getBoolean("fav_${file.name}",false);val header=ByteArray(16);val count=try{file.inputStream().use{it.read(header)}}catch(_:Exception){0};val mapper=if(count>=8)mapperOf(header)else -1
